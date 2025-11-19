@@ -1,0 +1,470 @@
+(function () {
+    'use strict';
+
+    let notificationPopupTimeout;
+    function showNotification(message, duration = 2000) {
+        const existingNotification = document.getElementById('notification-popup');
+        if (existingNotification) {
+            existingNotification.remove();
+            clearTimeout(notificationPopupTimeout);
+        }
+
+        const popup = document.createElement('div');
+        popup.id = 'notification-popup';
+        popup.innerText = message;
+        Object.assign(popup.style, {
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            padding: '8px 15px',
+            borderRadius: '5px',
+            boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
+            zIndex: '10001',
+            opacity: '0.9',
+            transition: 'opacity 0.3s ease-in-out'
+        });
+        document.body.appendChild(popup);
+
+        notificationPopupTimeout = setTimeout(() => {
+            popup.style.opacity = '0';
+            setTimeout(() => popup.remove(), 300);
+        }, duration);
+    }
+
+    const VERIFICATION_COOKIE_NAME = "zzaa";
+    const VERIFICATION_COOKIE_VALUE = "zzaa";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyCzfEgRutixv74_ydXBJmu8ImLNDcduoVk",
+        authDomain: "hehehaha-dda0e.firebaseapp.com",
+        databaseURL: "https://hehehaha-dda0e-default-rtdb.firebaseio.com",
+        projectId: "hehehaha-dda0e",
+        storageBucket: "hehehaha-dda0e.firebasestorage.app",
+        messagingSenderId: "475557136805",
+        appId: "1:475557136805:web:463e7fcb0ad8d51f69004c",
+        measurementId: "G-PTF35KXD5C"
+    };
+
+    let currentUserId = null;
+    let firebaseReady = false;
+    let dbInstance = null;
+    let authInstance = null;
+
+    function loadScript(url, callback) {
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: url,
+            onload: function (response) {
+                try {
+                    eval(response.responseText);
+                    if (callback) callback();
+                } catch (e) {
+                    console.error(`Failed to evaluate script from ${url}:`, e);
+                }
+            },
+            onerror: function (response) {
+                console.error(`Failed to load script from ${url}:`, response);
+            }
+        });
+    }
+
+    loadScript("https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js", () => {
+        loadScript("https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js", () => {
+            loadScript("https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js", () => {
+
+                firebase.initializeApp(firebaseConfig);
+                dbInstance = firebase.database();
+                authInstance = firebase.auth();
+
+                authInstance.signInAnonymously()
+                    .then((userCredential) => {
+                        currentUserId = userCredential.user.uid;
+                        console.log('Firebase user authenticated:', currentUserId);
+                        firebaseReady = true;
+                        initializeUserScriptFeatures();
+                    })
+                    .catch((error) => {
+                        console.error('Firebase authentication error:', error);
+                        showNotification(`Authentication error: ${error.message || error.code}`, 5000);
+                    });
+            });
+        });
+    });
+
+    let mainPopupTimeout;
+
+    function showPopup(content, permanent = false) {
+        const existingMainPopup = document.getElementById('main-answers-popup');
+        if (existingMainPopup) {
+            existingMainPopup.remove();
+            clearTimeout(mainPopupTimeout);
+        }
+
+        const popup = document.createElement('div');
+        popup.id = 'main-answers-popup';
+        popup.innerText = content;
+        Object.assign(popup.style, {
+            position: 'fixed',
+            bottom: '10px',
+            right: '10px',
+            padding: '10px',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            color: '#fff',
+            borderRadius: '15px',
+            zIndex: '10000',
+            fontSize: '14px',
+            maxWidth: '300px',
+            wordWrap: 'break-word',
+            fontFamily: 'Arial, sans-serif',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
+            transition: 'opacity 0.3s ease-in-out'
+        });
+
+        document.body.appendChild(popup);
+
+        if (!permanent) {
+            mainPopupTimeout = setTimeout(() => {
+                popup.style.opacity = '0';
+                setTimeout(() => popup.remove(), 200);
+            }, 200);
+
+            popup.addEventListener('mouseover', () => {
+                clearTimeout(mainPopupTimeout);
+                popup.style.opacity = '1';
+            });
+            popup.addEventListener('mouseout', () => {
+                mainPopupTimeout = setTimeout(() => {
+                    popup.style.opacity = '0';
+                    setTimeout(() => popup.remove(), 200);
+                }, 200);
+            });
+        }
+    }
+
+    /**
+     * Checks if the verification cookie is present with the correct value.
+     * @returns {boolean} True if verified, false otherwise.
+     */
+    function isVerified() {
+        const cookies = document.cookie.split('; ');
+        for (const cookie of cookies) {
+            const [name, value] = cookie.split('=');
+            if (name === VERIFICATION_COOKIE_NAME && value === VERIFICATION_COOKIE_VALUE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function initializeUserScriptFeatures() {
+
+        let areButtonsVisible = true;
+        let controlButtons = [];
+
+        async function loadAnswersFromFirebase() {
+            if (!firebaseReady || !currentUserId || !dbInstance) {
+                showNotification('Firebase not ready or user not authenticated yet. Cannot load.', 3000);
+                return;
+            }
+
+            const userAnswersRef = dbInstance.ref(`users/${currentUserId}/answers`);
+            try {
+                const snapshot = await userAnswersRef.once('value');
+                const savedAnswersObject = snapshot.val();
+
+                let answersToDisplay = [];
+                if (savedAnswersObject) {
+                    answersToDisplay = Object.values(savedAnswersObject).sort((a, b) => {
+                        const numA = parseInt(a.split('.')[0]);
+                        const numB = parseInt(b.split('.')[0]);
+                        return numA - numB;
+                    });
+                }
+
+                if (answersToDisplay.length > 0) {
+                    showPopup(answersToDisplay.join('\n'), false);
+                } else {
+                    showPopup('No saved answers found for this user in the database.', false);
+                }
+            } catch (error) {
+                console.error('Error loading answers from Firebase:', error);
+                showNotification('Failed to load answers from Firebase.');
+            }
+        }
+
+        async function clearAnswersInFirebase() {
+            if (!firebaseReady || !currentUserId || !dbInstance) {
+                showNotification('Firebase not ready or user not authenticated yet. Cannot clear.', 3000);
+                return;
+            }
+
+            const userAnswersRef = dbInstance.ref(`users/${currentUserId}/answers`);
+            try {
+                await userAnswersRef.remove();
+                const existingMainPopup = document.getElementById('main-answers-popup');
+                if (existingMainPopup) existingMainPopup.remove();
+                showNotification('All saved answers cleared from database!', 1000);
+            } catch (error) {
+                console.error('Error clearing answers from Firebase:', error);
+                showNotification('Failed to clear answers from database.');
+            }
+        }
+
+        function processReceivedData(data) {
+            if (!currentUserId || !dbInstance) {
+                console.warn('Firebase user not authenticated or DB not initialized. Cannot save new answers.');
+                return;
+            }
+
+            if (!Array.isArray(data)) {
+                console.warn('processReceivedData received non-array data:', data);
+                return;
+            }
+
+            data.forEach((item, indexx) => {
+                const qActivity = (item.activity || "").toLowerCase();
+
+                if (!(qActivity.startsWith("exit") ||
+                    qActivity.startsWith("et") ||
+                    qActivity.startsWith("flipped") ||
+                    qActivity.startsWith("fc"))) {
+                    return;
+                }
+
+                const questionId = item.question || (item.questions && item.questions.id);
+                if (!questionId) {
+                    console.warn("Skipping item, no questionId:", item);
+                    return;
+                }
+
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: `https://blb2024-o5xlbifnea-uc.a.run.app/questions/${questionId}`,
+                    headers: {
+                        "accept": "*/*",
+                        "content-type": "application/json",
+                        "origin": "https://student.nis-blb.com",
+                        "referer": "https://student.nis-blb.com/",
+                        //"token": "YOUR_TOKEN_HERE",
+                        "type": "student"
+                    },
+                    onload: function (response) {
+                        if (response.status !== 200) {
+                            console.error(`API request for question ${questionId} failed! Status: ${response.status}`);
+                            return;
+                        }
+
+                        try {
+                            const qdata = JSON.parse(response.responseText);
+                            if (!qdata || typeof qdata.type === "undefined") {
+                                console.warn(`Invalid qdata for ${questionId}:`, qdata);
+                                return;
+                            }
+
+                            let answerString = '';
+                            if (qdata.type === "True/False") {
+                                answerString = qdata.answer === "Right" ? "✅ Right" : "❌ Wrong";
+                            } else if (qdata.type === "Multiple Choice") {
+                                const options = qdata.questions_options || [];
+                                const correctOption = options.find(opt => opt.correct);
+                                if (correctOption) {
+                                    const labels = ["A", "B", "C", "D", "E", "F", "G"];
+                                    const idx = options.indexOf(correctOption);
+                                    answerString = `${labels[idx] || idx + 1}) ${correctOption.title}`;
+                                }
+                            }
+
+                            if (answerString) {
+                                const answerFormattedForDB = `${indexx + 1}. ${answerString}`;
+                                dbInstance.ref(`users/${currentUserId}/answers/${questionId}`).set(answerFormattedForDB);
+                                console.log(`✅ Saved Q${questionId}:`, answerFormattedForDB);
+                            }
+                        } catch (err) {
+                            console.error(`Error parsing API response for ${questionId}:`, err);
+                        }
+                    }
+                });
+            });
+        }
+
+        function createSaveButton() {
+            const button = document.createElement('button');
+            button.innerText = 'S';
+            Object.assign(button.style, {
+                position: 'fixed', top: '10px', right: '10px', zIndex: '9999', padding: '8px',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#fff', border: 'none',
+                borderRadius: '5px', cursor: 'pointer', opacity: '0', transition: 'opacity 0.5s ease, box-shadow 0.3s ease'
+            });
+
+            button.onclick = loadAnswersFromFirebase;
+            button.addEventListener('mouseover', () => { button.style.opacity = '1'; });
+            button.addEventListener('mouseout', () => { button.style.opacity = '0'; });
+            document.body.appendChild(button);
+            controlButtons.push(button);
+        }
+
+        function createClearButton() {
+            const button = document.createElement('button');
+            button.innerText = 'Clear';
+            Object.assign(button.style, {
+                position: 'fixed', top: '45px', right: '10px', zIndex: '9999', padding: '8px',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#fff', border: 'none',
+                borderRadius: '5px', cursor: 'pointer', opacity: '0', transition: 'opacity 0.5s ease, box-shadow 0.3s ease'
+            });
+
+            button.onclick = clearAnswersInFirebase;
+            button.addEventListener('mouseover', () => { button.style.opacity = '1'; });
+            button.addEventListener('mouseout', () => { button.style.opacity = '0'; });
+            document.body.appendChild(button);
+            controlButtons.push(button);
+        }
+
+        function createLoadButton() {
+            const button = document.createElement('button');
+            button.innerText = 'Load';
+            Object.assign(button.style, {
+                position: 'fixed', top: '80px', left: '10px', zIndex: '9999', padding: '8px',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#fff', border: 'none',
+                borderRadius: '5px', cursor: 'pointer', opacity: '0', transition: 'opacity 0.5s ease, box-shadow 0.3s ease'
+            });
+
+            button.onclick = loadAnswersFromFirebase;
+            button.addEventListener('mouseover', () => { button.style.opacity = '1'; });
+            button.addEventListener('mouseout', () => { button.style.opacity = '0'; });
+            document.body.appendChild(button);
+            controlButtons.push(button);
+        }
+
+        function toggleButtonsVisibility() {
+            if (areButtonsVisible) {
+                // Hide buttons
+                controlButtons.forEach(button => button.remove());
+                controlButtons = []; // Clear the array
+                showNotification("Buttons hidden", 500);
+            } else {
+                // Show buttons
+                createSaveButton();
+                createClearButton();
+                createLoadButton();
+
+                // Animate the newly created buttons
+                controlButtons.forEach(button => {
+                    button.style.opacity = '1';
+                    button.classList.add('glow-animation');
+                    setTimeout(() => {
+                        button.style.opacity = '0';
+                        button.classList.remove('glow-animation');
+                    }, 500); // Match animation duration
+                });
+            }
+            areButtonsVisible = !areButtonsVisible;
+        }
+
+
+        // --- Intercept network requests ---
+        const originalFetch = window.fetch;
+        window.fetch = function () {
+            return originalFetch.apply(this, arguments).then(async response => {
+                const clonedResponse = response.clone();
+                try {
+                    const jsonData = await clonedResponse.json();
+                    if (Array.isArray(jsonData)) {
+                        processReceivedData(jsonData);
+                    }
+                } catch (e) { }
+                return response;
+            });
+        };
+
+        const originalXHR = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function () {
+            this.addEventListener('load', function () {
+                if (this.responseType === 'arraybuffer' && this.response) {
+                    let decodedResponse = new TextDecoder('utf-8').decode(this.response);
+                    try {
+                        const parsedData = JSON.parse(decodedResponse);
+                        if (Array.isArray(parsedData)) {
+                            processReceivedData(parsedData);
+                        }
+                    } catch (e) { }
+                } else if (this.responseType === '' || this.responseType === 'text') {
+                    try {
+                        const response = JSON.parse(this.responseText);
+                        if (Array.isArray(response)) {
+                            processReceivedData(response);
+                        }
+                    } catch (e) { }
+                } else if (this.responseType === 'json' && this.response) {
+                    if (Array.isArray(this.response)) {
+                        processReceivedData(this.response);
+                    }
+                }
+            });
+            return originalXHR.apply(this, arguments);
+        };
+
+        // --- Main execution logic ---
+        if (isVerified()) {
+            // Inject CSS for animations
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes rainbow-glow {
+                    0% { box-shadow: 0 0 12px 3px rgba(255, 0, 0, 0.8); }
+                    14% { box-shadow: 0 0 12px 3px rgba(255, 127, 0, 0.8); }
+                    28% { box-shadow: 0 0 12px 3px rgba(255, 255, 0, 0.8); }
+                    42% { box-shadow: 0 0 12px 3px rgba(0, 255, 0, 0.8); }
+                    57% { box-shadow: 0 0 12px 3px rgba(0, 0, 255, 0.8); }
+                    71% { box-shadow: 0 0 12px 3px rgba(75, 0, 130, 0.8); }
+                    85% { box-shadow: 0 0 12px 3px rgba(148, 0, 211, 0.8); }
+                    100% { box-shadow: 0 0 12px 3px rgba(255, 0, 0, 0.8); }
+                }
+                .glow-animation {
+                    animation: rainbow-glow 0.5s ease-in-out;
+                }
+            `;
+            document.head.appendChild(style);
+
+            const waitForFirebase = setInterval(() => {
+                if (firebaseReady && currentUserId && dbInstance) {
+                    clearInterval(waitForFirebase);
+                    showNotification("Verification cookie found. Creating buttons.", 500);
+
+                    // Create initial buttons
+                    createSaveButton();
+                    createClearButton();
+                    createLoadButton();
+
+                    document.addEventListener('keydown', (e) => {
+                        if (e.ctrlKey && e.key === '0') {
+                            e.preventDefault();
+                            toggleButtonsVisibility();
+                        }
+                    });
+
+                    document.addEventListener('keydown', (key) => {
+
+                        if (key.ctrlKey && key.key === '8') {
+                            key.preventDefault()
+                            clearAnswersInFirebase()
+                        }
+                    })
+
+                    document.addEventListener('keydown', (key) => {
+
+                        if (key.ctrlKey && key.key === '9') {
+                            key.preventDefault()
+                            loadAnswersFromFirebase()
+                        }
+                    })
+
+
+                }
+            }, 500);
+        } else {
+            console.log("Verification cookie not found. Buttons will not be created.");
+        }
+    }
+})();
