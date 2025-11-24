@@ -52,8 +52,6 @@
     let firebaseReady = false;
     let dbInstance = null;
     let authInstance = null;
-    let scriptEnabled = false;
-    let featuresInitialized = false;
 
     function loadScript(url, callback) {
         GM_xmlhttpRequest({
@@ -86,12 +84,7 @@
                         currentUserId = userCredential.user.uid;
                         console.log('Firebase user authenticated:', currentUserId);
                         firebaseReady = true;
-
-                        if (isVerified()) {
-                            checkControlStatus();
-                        } else {
-                            console.log("Verification cookie not found. Script functionality disabled.");
-                        }
+                        initializeUserScriptFeatures();
                     })
                     .catch((error) => {
                         console.error('Firebase authentication error:', error);
@@ -109,8 +102,6 @@
             existingMainPopup.remove();
             clearTimeout(mainPopupTimeout);
         }
-
-        if (!scriptEnabled) return;
 
         const popup = document.createElement('div');
         popup.id = 'main-answers-popup';
@@ -153,6 +144,10 @@
         }
     }
 
+    /**
+     * Checks if the verification cookie is present with the correct value.
+     * @returns {boolean} True if verified, false otherwise.
+     */
     function isVerified() {
         const cookies = document.cookie.split('; ');
         for (const cookie of cookies) {
@@ -164,108 +159,12 @@
         return false;
     }
 
-    let controlButtons = [];
-    let areButtonsVisible = false;
-
-    function removeControlButtons() {
-        controlButtons.forEach(button => button.remove());
-        controlButtons = [];
-    }
-
-    function setScriptEnabled(enable, reason = '') {
-        if (scriptEnabled === enable) return;
-
-        scriptEnabled = enable;
-
-        if (enable) {
-            showNotification(`Script Enabled${reason ? `: ${reason}` : ''}`, 1500);
-            initializeUserScriptFeatures();
-
-            if (controlButtons.length > 0 && areButtonsVisible) {
-                controlButtons.forEach(button => {
-                    button.style.display = 'block';
-                    button.style.opacity = '1';
-                });
-            } else if (controlButtons.length > 0) {
-                 controlButtons.forEach(button => {
-                    button.style.display = 'block';
-                    button.style.opacity = '0';
-                });
-            }
-
-        } else {
-            showNotification(`Script Disabled${reason ? `: ${reason}` : ''}`, 3000);
-            controlButtons.forEach(button => button.style.display = 'none');
-            const existingMainPopup = document.getElementById('main-answers-popup');
-            if (existingMainPopup) existingMainPopup.remove();
-        }
-    }
-
-    function checkControlStatus() {
-        if (!firebaseReady || !currentUserId || !dbInstance) return;
-
-        const globalStatusRef = dbInstance.ref('control/globalStatus');
-        const userStatusRef = dbInstance.ref(`control/disabledUsers/${currentUserId}`);
-
-        Promise.all([globalStatusRef.once('value'), userStatusRef.once('value')]).then(([globalSnap, userSnap]) => {
-            const status = globalSnap.val();
-            const blocked = userSnap.val() === true;
-
-            if (status === 'off') {
-                 setScriptEnabled(false, "Global Kill Switch Active");
-            } else if (blocked) {
-                 setScriptEnabled(false, "User Blocked by Admin");
-            } else {
-                 setScriptEnabled(true, "Ready");
-            }
-        }).catch(err => {
-             console.error("Initial control check failed:", err);
-             setScriptEnabled(true, "Control Check Failed - Defaulting to Ready");
-        });
-
-        globalStatusRef.on('value', (snapshot) => {
-            const status = snapshot.val();
-            userStatusRef.once('value').then(userSnap => {
-                 const blocked = userSnap.val() === true;
-
-                 if (status === 'off') {
-                    setScriptEnabled(false, "Global Kill Switch Activated");
-                 } else if (blocked) {
-                     setScriptEnabled(false, "User Blocked by Admin");
-                 } else {
-                     setScriptEnabled(true, "Global Status Restored");
-                 }
-            });
-        });
-
-        userStatusRef.on('value', (snapshot) => {
-            globalStatusRef.once('value').then(globalSnap => {
-                if (globalSnap.val() === 'off') return;
-
-                if (snapshot.val() === true) {
-                    setScriptEnabled(false, "User Blocked by Admin");
-                } else {
-                    if (globalSnap.val() !== 'off') {
-                        setScriptEnabled(true, "User Block Removed");
-                    }
-                }
-            });
-        });
-    }
-
-
     function initializeUserScriptFeatures() {
-        if (featuresInitialized) return;
-        featuresInitialized = true;
 
-        if (!scriptEnabled) return;
-
+        let areButtonsVisible = true;
+        let controlButtons = [];
 
         async function loadAnswersFromFirebase() {
-            if (!scriptEnabled) {
-                showNotification('Script is currently disabled.', 1500);
-                return;
-            }
             if (!firebaseReady || !currentUserId || !dbInstance) {
                 showNotification('Firebase not ready or user not authenticated yet. Cannot load.', 3000);
                 return;
@@ -279,8 +178,8 @@
                 let answersToDisplay = [];
                 if (savedAnswersObject) {
                     answersToDisplay = Object.values(savedAnswersObject).sort((a, b) => {
-                        const numA = parseInt(a.match(/^(\d+)\./)?.[1] || 0);
-                        const numB = parseInt(b.match(/^(\d+)\./)?.[1] || 0);
+                        const numA = parseInt(a.split('.')[0]);
+                        const numB = parseInt(b.split('.')[0]);
                         return numA - numB;
                     });
                 }
@@ -297,10 +196,6 @@
         }
 
         async function clearAnswersInFirebase() {
-            if (!scriptEnabled) {
-                showNotification('Script is currently disabled.', 1500);
-                return;
-            }
             if (!firebaseReady || !currentUserId || !dbInstance) {
                 showNotification('Firebase not ready or user not authenticated yet. Cannot clear.', 3000);
                 return;
@@ -319,8 +214,6 @@
         }
 
         function processReceivedData(data) {
-            if (!scriptEnabled) return;
-
             if (!currentUserId || !dbInstance) {
                 console.warn('Firebase user not authenticated or DB not initialized. Cannot save new answers.');
                 return;
@@ -397,128 +290,126 @@
             });
         }
 
-
-        function createButton(text, top, action, isRight = false) {
+        function createSaveButton() {
             const button = document.createElement('button');
-            button.innerText = text;
+            button.innerText = 'S';
             Object.assign(button.style, {
-                position: 'fixed',
-                top: top,
-                left: isRight ? 'auto' : '10px',
-                right: isRight ? '10px' : 'auto',
-                zIndex: '9999',
-                padding: '8px',
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                opacity: '0',
-                transition: 'opacity 0.5s ease, box-shadow 0.3s ease',
-                display: 'block'
+                position: 'fixed', top: '10px', right: '10px', zIndex: '9999', padding: '8px',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#fff', border: 'none',
+                borderRadius: '5px', cursor: 'pointer', opacity: '0', transition: 'opacity 0.5s ease, box-shadow 0.3s ease'
             });
 
-            button.onclick = action;
-            button.addEventListener('mouseover', () => {
-                if (scriptEnabled) button.style.opacity = '1';
-            });
-            button.addEventListener('mouseout', () => {
-                if (scriptEnabled && !areButtonsVisible) button.style.opacity = '0';
-            });
+            button.onclick = loadAnswersFromFirebase;
+            button.addEventListener('mouseover', () => { button.style.opacity = '1'; });
+            button.addEventListener('mouseout', () => { button.style.opacity = '0'; });
             document.body.appendChild(button);
             controlButtons.push(button);
-            return button;
-        }
-
-        function createSaveButton() {
-            createButton('S', '10px', loadAnswersFromFirebase);
         }
 
         function createClearButton() {
-            createButton('Clear', '45px', clearAnswersInFirebase);
+            const button = document.createElement('button');
+            button.innerText = 'Clear';
+            Object.assign(button.style, {
+                position: 'fixed', top: '45px', right: '10px', zIndex: '9999', padding: '8px',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#fff', border: 'none',
+                borderRadius: '5px', cursor: 'pointer', opacity: '0', transition: 'opacity 0.5s ease, box-shadow 0.3s ease'
+            });
+
+            button.onclick = clearAnswersInFirebase;
+            button.addEventListener('mouseover', () => { button.style.opacity = '1'; });
+            button.addEventListener('mouseout', () => { button.style.opacity = '0'; });
+            document.body.appendChild(button);
+            controlButtons.push(button);
         }
 
         function createLoadButton() {
-            createButton('Load', '80px', loadAnswersFromFirebase, true);
+            const button = document.createElement('button');
+            button.innerText = 'Load';
+            Object.assign(button.style, {
+                position: 'fixed', top: '80px', left: '10px', zIndex: '9999', padding: '8px',
+                backgroundColor: 'rgba(0, 0, 0, 0.5)', color: '#fff', border: 'none',
+                borderRadius: '5px', cursor: 'pointer', opacity: '0', transition: 'opacity 0.5s ease, box-shadow 0.3s ease'
+            });
+
+            button.onclick = loadAnswersFromFirebase;
+            button.addEventListener('mouseover', () => { button.style.opacity = '1'; });
+            button.addEventListener('mouseout', () => { button.style.opacity = '0'; });
+            document.body.appendChild(button);
+            controlButtons.push(button);
         }
 
         function toggleButtonsVisibility() {
-            if (!scriptEnabled) {
-                 showNotification('Script is disabled, cannot toggle buttons.', 1500);
-                 return;
-            }
-
             if (areButtonsVisible) {
-                controlButtons.forEach(button => {
-                    button.style.opacity = '0';
-                    button.classList.remove('glow-animation');
-                });
+                // Hide buttons
+                controlButtons.forEach(button => button.remove());
+                controlButtons = []; // Clear the array
                 showNotification("Buttons hidden", 500);
             } else {
+                // Show buttons
+                createSaveButton();
+                createClearButton();
+                createLoadButton();
+
+                // Animate the newly created buttons
                 controlButtons.forEach(button => {
-                    button.style.display = 'block';
                     button.style.opacity = '1';
                     button.classList.add('glow-animation');
                     setTimeout(() => {
+                        button.style.opacity = '0';
                         button.classList.remove('glow-animation');
-                    }, 500);
+                    }, 500); // Match animation duration
                 });
             }
             areButtonsVisible = !areButtonsVisible;
         }
 
 
-        if (!window.__fetch_modified__) {
-            const originalFetch = window.fetch;
-            window.fetch = function () {
-                return originalFetch.apply(this, arguments).then(async response => {
-                    if (scriptEnabled) {
-                        const clonedResponse = response.clone();
-                        try {
-                            const jsonData = await clonedResponse.json();
-                            if (Array.isArray(jsonData)) {
-                                processReceivedData(jsonData);
-                            }
-                        } catch (e) { }
+        // --- Intercept network requests ---
+        const originalFetch = window.fetch;
+        window.fetch = function () {
+            return originalFetch.apply(this, arguments).then(async response => {
+                const clonedResponse = response.clone();
+                try {
+                    const jsonData = await clonedResponse.json();
+                    if (Array.isArray(jsonData)) {
+                        processReceivedData(jsonData);
                     }
-                    return response;
-                });
-            };
-            window.__fetch_modified__ = true;
-        }
+                } catch (e) { }
+                return response;
+            });
+        };
 
-        if (!window.__xhr_modified__) {
-            const originalXHR = XMLHttpRequest.prototype.open;
-            XMLHttpRequest.prototype.open = function () {
-                this.addEventListener('load', function () {
-                    if (!scriptEnabled) return;
-
-                    let responseData;
-                    if (this.responseType === 'arraybuffer' && this.response) {
-                        try {
-                             responseData = JSON.parse(new TextDecoder('utf-8').decode(this.response));
-                        } catch (e) { }
-                    } else if (this.responseType === '' || this.responseType === 'text') {
-                        try {
-                             responseData = JSON.parse(this.responseText);
-                        } catch (e) { }
-                    } else if (this.responseType === 'json' && this.response) {
-                        responseData = this.response;
+        const originalXHR = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function () {
+            this.addEventListener('load', function () {
+                if (this.responseType === 'arraybuffer' && this.response) {
+                    let decodedResponse = new TextDecoder('utf-8').decode(this.response);
+                    try {
+                        const parsedData = JSON.parse(decodedResponse);
+                        if (Array.isArray(parsedData)) {
+                            processReceivedData(parsedData);
+                        }
+                    } catch (e) { }
+                } else if (this.responseType === '' || this.responseType === 'text') {
+                    try {
+                        const response = JSON.parse(this.responseText);
+                        if (Array.isArray(response)) {
+                            processReceivedData(response);
+                        }
+                    } catch (e) { }
+                } else if (this.responseType === 'json' && this.response) {
+                    if (Array.isArray(this.response)) {
+                        processReceivedData(this.response);
                     }
+                }
+            });
+            return originalXHR.apply(this, arguments);
+        };
 
-                    if (responseData && Array.isArray(responseData)) {
-                        processReceivedData(responseData);
-                    }
-                });
-                return originalXHR.apply(this, arguments);
-            };
-            window.__xhr_modified__ = true;
-        }
-
-        const styleId = 'user-script-style';
-        if (!document.getElementById(styleId)) {
+        // --- Main execution logic ---
+        if (isVerified()) {
+            // Inject CSS for animations
             const style = document.createElement('style');
-            style.id = styleId;
             style.textContent = `
                 @keyframes rainbow-glow {
                     0% { box-shadow: 0 0 12px 3px rgba(255, 0, 0, 0.8); }
@@ -535,42 +426,45 @@
                 }
             `;
             document.head.appendChild(style);
-        }
 
-        removeControlButtons();
-        createSaveButton();
-        createClearButton();
-        createLoadButton();
+            const waitForFirebase = setInterval(() => {
+                if (firebaseReady && currentUserId && dbInstance) {
+                    clearInterval(waitForFirebase);
+                    showNotification("Verification cookie found. Creating buttons.", 500);
+
+                    // Create initial buttons
+                    createSaveButton();
+                    createClearButton();
+                    createLoadButton();
+
+                    document.addEventListener('keydown', (e) => {
+                        if (e.ctrlKey && e.key === '0') {
+                            e.preventDefault();
+                            toggleButtonsVisibility();
+                        }
+                    });
+
+                    document.addEventListener('keydown', (key) => {
+
+                        if (key.ctrlKey && key.key === '8') {
+                            key.preventDefault()
+                            clearAnswersInFirebase()
+                        }
+                    })
+
+                    document.addEventListener('keydown', (key) => {
+
+                        if (key.ctrlKey && key.key === '9') {
+                            key.preventDefault()
+                            loadAnswersFromFirebase()
+                        }
+                    })
 
 
-        if (!window.__keyboard_listeners_set__) {
-            document.addEventListener('keydown', (e) => {
-                if (!scriptEnabled) return;
-
-                if (e.ctrlKey && e.key === '0') {
-                    e.preventDefault();
-                    toggleButtonsVisibility();
                 }
-            });
-
-            document.addEventListener('keydown', (key) => {
-                if (!scriptEnabled) return;
-
-                if (key.ctrlKey && key.key === '8') {
-                    key.preventDefault();
-                    clearAnswersInFirebase();
-                }
-            });
-
-            document.addEventListener('keydown', (key) => {
-                if (!scriptEnabled) return;
-
-                if (key.ctrlKey && key.key === '9') {
-                    key.preventDefault();
-                    loadAnswersFromFirebase();
-                }
-            });
-            window.__keyboard_listeners_set__ = true;
+            }, 500);
+        } else {
+            console.log("Verification cookie not found. Buttons will not be created.");
         }
     }
 })();
