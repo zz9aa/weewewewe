@@ -1,47 +1,47 @@
 part 1:
-1. a
-2. c
-3. b
-4. a
-5. d
-6. b
-7. c
-8. d
-9. a
-10. b
-11. c
-12. d
-13. a
-14. b
-15. c
-16. d
-17. a
-18. b
-19. c
-20. d
-21. a
-22. b
-23. c
-24. d
-25. a
-
-part 2:
-1. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent vel velit non.
-2. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam.
-
-part 3:
-1. MCQ Question 1: Answer B
-2. MCQ Question 2: Answer C
-3. MCQ Question 3: Answer A
-4. MCQ Question 4: Answer D
-5. MCQ Question 5: Answer B
-6. MCQ Question 6: Answer C
-7. MCQ Question 7: Answer A
-8. MCQ Question 8: Answer D
-9. MCQ Question 9: Answer B
-10. MCQ Question 10: Answer C
-11. MCQ Question 11: Answer A
-12. MCQ Question 12: Answer D
-13. MCQ Question 13: Answer B
-14. MCQ Question 14: Answer C
-15. MCQ Question 15: Answer A
+1. A
+2. B
+3. D
+4. A
+5. B
+6. B
+7. C
+8. B
+9. D
+10. C
+11. B
+12. D
+13. A
+14. A
+15. B
+16. C
+17. A
+18. D
+19. A
+20. B
+21. B
+22. B
+23. B
+24. A
+25. C
+part 2: 
+1. In *The Iliad*, the gods constantly interfere with human decisions, which limits human freedom and often undermines heroism. Heroes like Hector and Achilles try to act bravely, but their fates are shaped by divine favoritism or deception, showing that heroism depends as much on the gods’ will as on personal strength.
+2. In *In Memoriam*, the poem’s fragmented structure and shifting tone mirror Tennyson’s movement from grief to renewed faith. Early sections feel dark and hopeless, but over time the tone softens and becomes more hopeful, reflecting his gradual emotional and spiritual recovery.
+3. Woolf’s stream-of-consciousness technique reveals Oliver Bacon’s inner conflict by showing his thoughts as they shift between pride, insecurity, and self-deception. This style highlights themes of ambition and appearance versus reality, exposing how his desire for status leads him to compromise his morals.  
+part 3: 
+1. B
+2. C
+3. A
+4. A
+5. D
+6. B
+7. A
+8. C
+9. B
+10. A
+11. D
+12. A
+13. B
+14. A
+15. D
+  
